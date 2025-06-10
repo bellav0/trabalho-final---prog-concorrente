@@ -21,16 +21,17 @@ typedef struct
     int height;
 } ThreadData;
 
-// Aloca matriz 3D (altura x largura x 3)
+// Aloca matriz 3D
 uint8_t ***alloc_image(int h, int w)
 {
     uint8_t ***img = malloc(h * sizeof(uint8_t **));
-    for (int y = 0; y < h; y++)
+
+    for (int linha = 0; linha < h; linha++)
     {
-        img[y] = malloc(w * sizeof(uint8_t *));
-        for (int x = 0; x < w; x++)
+        img[linha] = malloc(w * sizeof(uint8_t *));
+        for (int col = 0; col < w; col++)
         {
-            img[y][x] = calloc(3, sizeof(uint8_t));
+            img[linha][col] = calloc(3, sizeof(uint8_t));
         }
     }
     return img;
@@ -38,13 +39,13 @@ uint8_t ***alloc_image(int h, int w)
 
 void free_image(uint8_t ***img, int h, int w)
 {
-    for (int y = 0; y < h; y++)
+    for (int linha = 0; linha < h; linha++)
     {
-        for (int x = 0; x < w; x++)
+        for (int col = 0; col < w; col++)
         {
-            free(img[y][x]);
+            free(img[linha][col]);
         }
-        free(img[y]);
+        free(img[linha]);
     }
     free(img);
 }
@@ -59,13 +60,13 @@ void load_image(uint8_t ***image, const char *path, int *w, int *h)
         exit(1);
     }
 
-    for (int y = 0; y < *h; y++)
+    for (int linha = 0; linha < *h; linha++)
     {
-        for (int x = 0; x < *w; x++)
+        for (int col = 0; col < *w; col++)
         {
             for (int c = 0; c < 3; c++)
             {
-                image[y][x][c] = data[(y * (*w) + x) * 3 + c];
+                image[linha][col][c] = data[(linha * (*w) + col) * 3 + c];
             }
         }
     }
@@ -75,13 +76,13 @@ void load_image(uint8_t ***image, const char *path, int *w, int *h)
 void save_image(uint8_t ***image, int w, int h, const char *path)
 {
     uint8_t *data = malloc(w * h * 3);
-    for (int y = 0; y < h; y++)
+    for (int linha = 0; linha < h; linha++)
     {
-        for (int x = 0; x < w; x++)
+        for (int col = 0; col < w; col++)
         {
             for (int c = 0; c < 3; c++)
             {
-                data[(y * w + x) * 3 + c] = image[y][x][c];
+                data[(linha * w + col) * 3 + c] = image[linha][col][c];
             }
         }
     }
@@ -89,15 +90,15 @@ void save_image(uint8_t ***image, int w, int h, const char *path)
     free(data);
 }
 
-// Função que será executada por cada thread
 void apply_color_filter(uint8_t ***image, int start_row, int end_row, int width)
 {
-    for (int y = start_row; y < end_row; y++)
+    for (int linha = start_row; linha < end_row; linha++)
     {
-        for (int x = 0; x < width; x++)
+        for (int col = 0; col < width; col++)
         {
-            image[y][x][1] = 0; // Remove verde
-            image[y][x][2] = 0; // Remove azul
+            printf("[%d][%d][0] = %d\n", linha, col, image[linha][col][0]);
+            image[linha][col][1] = 0; // Remove verde
+            image[linha][col][2] = 0; // Remove azul
         }
     }
 }
@@ -108,11 +109,11 @@ void apply_laplacian_block(uint8_t ***input, uint8_t ***output, int start_row, i
         {-1, 4, -1},
         {0, -1, 0}};
 
-    for (int y = start_row; y < end_row; y++)
+    for (int linha = start_row; linha < end_row; linha++)
     {
-        if (y == 0 || y == height - 1)
-            continue; // evita borda
-        for (int x = 1; x < width - 1; x++)
+        if (linha == 0 || linha == height - 1)
+            continue;
+        for (int col = 1; col < width - 1; col++)
         {
             for (int c = 0; c < 3; c++)
             {
@@ -121,19 +122,20 @@ void apply_laplacian_block(uint8_t ***input, uint8_t ***output, int start_row, i
                 {
                     for (int kx = -1; kx <= 1; kx++)
                     {
-                        sum += kernel[ky + 1][kx + 1] * input[y + ky][x + kx][c];
+                        sum += kernel[ky + 1][kx + 1] * input[linha + ky][col + kx][c];
                     }
                 }
-                int value = input[y][x][c] + sum;
+                int value = input[linha][col][c] + sum;
                 if (value < 0)
                     value = 0;
                 if (value > 255)
                     value = 255;
-                output[y][x][c] = (uint8_t)value;
+                output[linha][col][c] = (uint8_t)value;
             }
         }
     }
 }
+
 void *thread_func(void *arg)
 {
     ThreadData *data = (ThreadData *)arg;
@@ -149,6 +151,8 @@ void *thread_func(void *arg)
 
 int main(int argc, char *argv[])
 {
+    int width, height;
+    double ini, fim, delta;
     if (argc != 4)
     {
         fprintf(stderr, "Uso: %s <input_image> <output_image> <num_threads>\n", argv[0]);
@@ -165,11 +169,11 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    int width, height;
-    double ini, fim, delta;
     GET_TIME(ini);
 
-    uint8_t ***input_image = alloc_image(3000, 3000); // tamanho inicial arbitrário
+    // limite de 5000x5000
+    uint8_t ***input_image = alloc_image(5000, 5000);
+
     load_image(input_image, input_path, &width, &height);
     printf("Imagem carregada: %d x %d\n", width, height);
 
@@ -179,6 +183,8 @@ int main(int argc, char *argv[])
     ThreadData thread_data[num_threads];
     int rows_per_thread = height / num_threads;
 
+    printf("altura da imagem: %d\n", height);
+    printf("Dividindo a imagem em %d threads de %d linhas cada\n", num_threads, rows_per_thread);
     for (int i = 0; i < num_threads; i++)
     {
         thread_data[i].id = i;
